@@ -4,45 +4,21 @@ import numpy as np
 from openai import OpenAI
 from env import LogHuntEnv
 
-# Read environment variables
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api-inference.huggingface.co/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.3")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+HF_TOKEN = os.environ.get("OPENAI_API_KEY", "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")
 
-# Setup OpenAI client pointing to HuggingFace
-client = OpenAI(
-    base_url=API_BASE_URL,
-    api_key=HF_TOKEN,
-)
+client = OpenAI(base_url=API_BASE_URL, api_key="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")
 
 TASKS = ["easy", "medium", "hard"]
 
-ACTIONS = {
-    0: "PASS - do nothing",
-    1: "FILTER_IP - block suspicious IP",
-    2: "CORRELATE - correlate log events",
-    3: "ESCALATE - escalate to human analyst",
-    4: "ALERT - raise security alert"
-}
-
 def ask_llm(obs, step_num, task_id):
-    """Ask the LLM what action to take given the observation."""
-    obs_summary = obs.tolist()[:10]  # Send only first 10 values to keep it short
-
+    obs_summary = obs.tolist()[:10]
     prompt = f"""You are a cybersecurity AI agent analyzing network logs.
-Task difficulty: {task_id}
-Step: {step_num}
-Recent network observation (first 10 values): {obs_summary}
-
-Choose ONE action by responding with ONLY a single digit (0-4):
-0 = PASS (do nothing, traffic looks normal)
-1 = FILTER_IP (block suspicious IP address)
-2 = CORRELATE (correlate log events for patterns)
-3 = ESCALATE (escalate to human analyst)
-4 = ALERT (raise security alert, high threat detected)
-
-Respond with ONLY the digit, nothing else."""
-
+Task: {task_id}, Step: {step_num}
+Observation (first 10 values): {obs_summary}
+Choose ONE action - reply with ONLY a single digit:
+0 = PASS, 1 = FILTER_IP, 2 = CORRELATE, 3 = ESCALATE, 4 = ALERT"""
     try:
         response = client.chat.completions.create(
             model=MODEL_NAME,
@@ -51,32 +27,24 @@ Respond with ONLY the digit, nothing else."""
             temperature=0.1,
         )
         reply = response.choices[0].message.content.strip()
-        # Extract first digit from reply
         for char in reply:
             if char in "01234":
                 return int(char)
-    except Exception as e:
-        pass  # Fall back to rule-based if LLM fails
-
-    # Fallback rule-based action
+    except:
+        pass
     window_flat = obs[:-2]
-    syn_mean = window_flat.reshape(10, -1)[:, min(13, window_flat.reshape(10, -1).shape[1]-1)].mean()
+    syn_mean = window_flat.reshape(10, -1)[:, 13].mean()
     if syn_mean > 0.5:
         return 4
     elif syn_mean > 0.3:
         return 1
     return 0
 
-
 def run_task(task_id):
     env = LogHuntEnv("data/CICIDS2017_sample.csv", curriculum=task_id)
     obs, _ = env.reset()
 
-    print(json.dumps({
-        "type": "[START]",
-        "task_id": task_id,
-        "observation": obs.tolist()
-    }))
+    print(json.dumps({"type": "[START]", "task_id": task_id, "observation": obs.tolist()}))
 
     total_reward = 0
     steps = 0
@@ -84,36 +52,20 @@ def run_task(task_id):
 
     for i in range(200):
         action = ask_llm(obs, i, task_id)
-
         obs, reward, done, _, info = env.step(action)
         total_reward += reward
         steps += 1
 
-        print(json.dumps({
-            "type": "[STEP]",
-            "task_id": task_id,
-            "step": steps,
-            "action": int(action),
-            "reward": float(reward),
-            "done": done
-        }))
+        print(json.dumps({"type": "[STEP]", "task_id": task_id, "step": steps, "action": int(action), "reward": float(reward), "done": done}))
 
         if done:
             break
 
     score = min(max(total_reward / 300, 0.0), 1.0)
 
-    print(json.dumps({
-        "type": "[END]",
-        "task_id": task_id,
-        "total_reward": float(total_reward),
-        "score": float(score),
-        "steps": steps,
-        "info": info
-    }))
+    print(json.dumps({"type": "[END]", "task_id": task_id, "total_reward": float(total_reward), "score": float(score), "steps": steps, "info": info}))
 
     return score
-
 
 if __name__ == "__main__":
     for task in TASKS:
