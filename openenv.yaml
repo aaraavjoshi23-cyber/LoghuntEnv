@@ -1,0 +1,24 @@
+name: LogHuntEnv
+version: "1.0"
+description: AI agent that detects network attacks like a cybersecurity analyst
+observation_space:
+  type: array
+  shape: [202]
+  dtype: float32
+action_space:
+  type: discrete
+  n: 6
+tasks:
+  - id: easy
+    description: Detect single attack type in network logs
+    difficulty: easy
+  - id: medium
+    description: Detect multiple attack types with limited budget
+    difficulty: medium
+  - id: hard
+    description: Detect kill chains across mixed attack traffic
+    difficulty: hard
+reward:
+  min: -10.0
+  max: 20.0
+  normalized: true
