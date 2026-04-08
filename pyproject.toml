@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "loghunt-env"
+version = "1.0.0"
+description = "AI Cybersecurity Environment for detecting network attacks"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "gymnasium",
+    "stable-baselines3",
+    "fastapi",
+    "uvicorn",
+]
