@@ -113,7 +113,7 @@ def run_task(task_id):
             if done:
                 break
 
-        score = float(min(max(total_reward / 300, 0.0), 1.0))
+        score = float(min(max(total_reward / 300, 0.01), 0.99))
 
         print(f"[END] task={task_id} score={round(score, 4)} steps={steps}", flush=True)
 
