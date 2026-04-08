@@ -1,24 +1,89 @@
 name: LogHuntEnv
 version: "1.0"
-description: AI agent that detects network attacks like a cybersecurity analyst
+description: >
+  A real-world cybersecurity AI environment where an agent analyzes
+  live network traffic logs and must detect attacks (DDoS, PortScan, Bot)
+  while managing a limited alert budget. Based on CICIDS2017 traffic patterns.
+author: Syed Affan
+entrypoint: uvicorn app:app --host 0.0.0.0 --port 7860
+
 observation_space:
   type: array
   shape: [202]
   dtype: float32
+  description: >
+    Flattened window of 10 log rows × 20 features = 200 values,
+    plus 2 meta values: [alert_budget_remaining (0–1), step_progress (0–1)]
+
 action_space:
   type: discrete
   n: 6
+  actions:
+    - id: 0
+      name: PASS
+      description: Do nothing, advance to next log window
+    - id: 1
+      name: FILTER_IP
+      description: Block the source IP in the current window
+    - id: 2
+      name: CORRELATE
+      description: Look for attack patterns across the last 5 logs
+    - id: 3
+      name: PIVOT_USER
+      description: Flag the user account as suspicious
+    - id: 4
+      name: ALERT
+      description: Raise a security alert (costs 1 budget)
+    - id: 5
+      name: QUARANTINE
+      description: Full system quarantine (costs 2 budget, high reward if correct)
+
 tasks:
   - id: easy
-    description: Detect single attack type in network logs
+    description: Detect a single dominant attack type in network logs
     difficulty: easy
+    reward_threshold: 0.3
+    max_steps: 200
   - id: medium
-    description: Detect multiple attack types with limited budget
+    description: Detect multiple simultaneous attack types across log windows
     difficulty: medium
+    reward_threshold: 0.5
+    max_steps: 200
   - id: hard
-    description: Detect kill chains across mixed attack traffic
+    description: Detect full kill-chains spanning multiple attack stages
     difficulty: hard
+    reward_threshold: 0.7
+    max_steps: 200
+
 reward:
-  min: -10.0
-  max: 20.0
+  min: -300.0
+  max: 300.0
   normalized: true
+  description: >
+    Per-step: ALERT correct = +10, ALERT false positive = -5,
+    QUARANTINE kill-chain = +20, QUARANTINE FP = -8,
+    FILTER_IP correct = +2, PIVOT_USER lateral movement = +3.
+    Episode bonus: precision * 15 added at done.
+    Score = clamp(total_reward / 300, 0.0, 1.0)
+
+endpoints:
+  - path: /
+    method: GET
+    description: Health check, returns status ok
+  - path: /health
+    method: GET
+    description: Health check endpoint
+  - path: /tasks
+    method: GET
+    description: Lists all available tasks with metadata
+  - path: /reset
+    method: POST
+    body: '{"task_id": "easy|medium|hard"}'
+    description: Reset environment for given task
+  - path: /step
+    method: POST
+    body: '{"action": 0}'
+    description: Take one step in the environment
+  - path: /state
+    method: GET
+    description: Get current observation without stepping
