@@ -1,5 +1,7 @@
 name: LogHuntEnv
-version: "1.0"
+version: "1.0.0"
+sdk: docker
+app_port: 7860
 description: >
   A real-world cybersecurity AI environment where an agent analyzes
   live network traffic logs and must detect attacks (DDoS, PortScan, Bot)
@@ -56,8 +58,8 @@ tasks:
     max_steps: 200
 
 reward:
-  min: -300.0
-  max: 300.0
+  min: 0.0
+  max: 1.0
   normalized: true
   description: >
     Per-step: ALERT correct = +10, ALERT false positive = -5,
