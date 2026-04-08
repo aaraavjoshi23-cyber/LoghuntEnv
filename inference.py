@@ -2,6 +2,16 @@ import sys
 import os
 import numpy as np
 
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.environ["API_BASE_URL"],
+    api_key=os.environ["API_KEY"]
+)
+
+# =========================
+# DATASET CREATION
+# =========================
 def create_dataset():
     import pandas as pd
     os.makedirs('data', exist_ok=True)
@@ -35,23 +45,65 @@ def create_dataset():
 
 create_dataset()
 
+# =========================
+# IMPORT ENV
+# =========================
 from env import LogHuntEnv
 
 TASKS = ["easy", "medium", "hard"]
 
+# =========================
+# AI AGENT
+# =========================
+def agent_decision(obs):
+    try:
+        prompt = f"""
+        You are a cybersecurity AI.
+        Classify the network activity into one of these classes:
+        0 = BENIGN
+        1 = DDoS
+        2 = PortScan
+        3 = Bot
+        4 = Suspicious
+        5 = Unknown
+        Data:
+        {str(obs)[:300]}
+        Only return a number (0-5).
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a cybersecurity expert."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        answer = response.choices[0].message.content.strip()
+
+        action = int(answer) if answer.isdigit() else 0
+        return max(0, min(action, 5))
+
+    except Exception:
+        return 0
+
+
+# =========================
+# RUN TASK
+# =========================
 def run_task(task_id):
     try:
         env = LogHuntEnv("data/CICIDS2017_sample.csv", curriculum=task_id)
         obs, _ = env.reset()
 
-        # EXACT format judges require
         print(f"[START] task={task_id}", flush=True)
 
         total_reward = 0
         steps = 0
 
-        for _ in range(200):
-            action = np.random.randint(0, 6)
+        for _ in range(50):  # reduced for API safety
+            action = agent_decision(obs)
+
             obs, reward, done, _, info = env.step(action)
             total_reward += reward
             steps += 1
@@ -73,6 +125,10 @@ def run_task(task_id):
         print(f"[END] task={task_id} score=0.0 steps=1", flush=True)
         return 0.0
 
+
+# =========================
+# MAIN
+# =========================
 if __name__ == "__main__":
     for task in TASKS:
         run_task(task)
