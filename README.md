@@ -11,7 +11,12 @@ An AI agent analyzes live network traffic logs and must detect attacks (DDoS, Po
 > Deploy URL will be listed here after deployment.
 
 ---
+## 📌 What it does
+- Provides log entries
+- User/agent classifies logs as normal or suspicious
+- Gives reward based on correctness
 
+- 
 ## 📋 Environment Description
 
 | Property | Value |
