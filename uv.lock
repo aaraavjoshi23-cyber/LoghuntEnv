@@ -1,0 +1,17 @@
+version = 1
+requires-python = ">=3.10"
+
+[[package]]
+name = "loghunt-env"
+version = "1.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scikit-learn" },
+    { name = "gymnasium" },
+    { name = "stable-baselines3" },
+    { name = "fastapi" },
+    { name = "uvicorn" },
+    { name = "openenv-core" },
+]
