@@ -1,11 +1,15 @@
+import uvicorn
 from fastapi import FastAPI
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from env import LogHuntEnv
 import numpy as np
 
 app = FastAPI()
+
 env = LogHuntEnv("data/CICIDS2017_sample.csv", curriculum="easy")
 obs, _ = env.reset()
 
@@ -46,3 +50,11 @@ def step(action: int = 0):
 @app.get("/state")
 def state():
     return {"observation": obs.tolist()}
+
+
+def main():
+    uvicorn.run(app, host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    main()
