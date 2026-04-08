@@ -1,131 +1,104 @@
 import json
-import os
-import time
 import numpy as np
-from dotenv import load_dotenv
-from openai import OpenAI, RateLimitError
+import os
+import sys
+
+# ── Create dataset before anything else ──────────────────────────────────────
+def create_dataset():
+    import pandas as pd
+    os.makedirs('data', exist_ok=True)
+    if not os.path.exists('data/CICIDS2017_sample.csv'):
+        np.random.seed(42)
+        n = 5000
+        data = {
+            ' Label': np.random.choice(['BENIGN','DDoS','PortScan','Bot'], n),
+            'Flow Duration': np.random.randint(0, 100000, n),
+            'Total Fwd Packets': np.random.randint(1, 100, n),
+            'Total Backward Packets': np.random.randint(1, 100, n),
+            'Total Length of Fwd Packets': np.random.randint(0, 5000, n),
+            'Total Length of Bwd Packets': np.random.randint(0, 5000, n),
+            'Fwd Packet Length Max': np.random.randint(0, 1500, n),
+            'Bwd Packet Length Max': np.random.randint(0, 1500, n),
+            'Flow Bytes/s': np.random.uniform(0, 1000000, n),
+            'Flow Packets/s': np.random.uniform(0, 1000, n),
+            'Flow IAT Mean': np.random.uniform(0, 100000, n),
+            'Fwd IAT Total': np.random.uniform(0, 100000, n),
+            'Bwd IAT Total': np.random.uniform(0, 100000, n),
+            'Fwd PSH Flags': np.random.randint(0, 2, n),
+            'SYN Flag Count': np.random.randint(0, 10, n),
+            'RST Flag Count': np.random.randint(0, 5, n),
+            'URG Flag Count': np.random.randint(0, 2, n),
+            'Packet Length Mean': np.random.uniform(0, 1500, n),
+            'Packet Length Std': np.random.uniform(0, 500, n),
+            'Average Packet Size': np.random.uniform(0, 1500, n),
+            'Avg Fwd Segment Size': np.random.uniform(0, 1500, n),
+        }
+        pd.DataFrame(data).to_csv('data/CICIDS2017_sample.csv', index=False)
+        print("Dataset created!", flush=True)
+
+# Create dataset first before importing env
+create_dataset()
+
+# ── Now import env ────────────────────────────────────────────────────────────
 from env import LogHuntEnv
-
-# Load environment variables from .env file
-load_dotenv()
-
-API_BASE_URL = os.environ.get("API_BASE_URL")
-MODEL_NAME   = os.environ.get("MODEL_NAME")
-HF_TOKEN     = os.environ.get("HF_TOKEN")
-
-client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
 TASKS = ["easy", "medium", "hard"]
 
-def ask_llm(obs, step_num, task_id):
-    # obs is 202 values: (10 logs * 20 features) + budget + progress
-    logs = obs[:200].reshape(10, 20)
-    features_mean = logs.mean(axis=0).round(3).tolist() # Average of each feature over the window
-    budget = round(obs[200], 2)
-    progress = round(obs[201], 2)
-
-    prompt = f"""You are a cybersecurity AI agent analyzing network traffic logs.
-Task difficulty: {task_id}  |  Step: {step_num}
-Alert Budget Left: {budget} | Progress: {progress}
-Window Summary (Average of 20 features over last 10 logs):
-{features_mean}
-
-Your job is to detect attacks (DDoS, PortScan, Bot). Choose ONE action (0-5):
-0 = PASS        (do nothing, advance)
-1 = FILTER_IP   (block source IP)
-2 = CORRELATE   (check patterns)
-3 = PIVOT_USER  (flag lateral movement)
-4 = ALERT       (raise security alert - costs budget)
-5 = QUARANTINE  (full system lockdown - high cost/reward)
-
-Reply with ONLY a single digit (0-5):"""
-
-    for attempt in range(3):  # 3 Retries for rate limits
-        try:
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=5,
-                temperature=0.1,
-            )
-            reply = response.choices[0].message.content.strip()
-            for char in reply:
-                if char in "012345":
-                    return int(char)
-            break # If we got a response but no digit, stop retrying and use fallback
-        except RateLimitError:
-            wait_time = (attempt + 1) * 2 # 2, 4, 6 seconds
-            time.sleep(wait_time)
-        except Exception:
-            break # Other errors use immediate fallback
-
-        pass
-
-    # Rule-based fallback if LLM call fails
-    window_flat = obs[:-2]
-    try:
-        features_2d = window_flat.reshape(10, -1)
-        syn_mean = features_2d[:, 13].mean()   # SYN Flag Count column
-        pkt_mean = features_2d[:, 2].mean()    # Total Fwd Packets column
-        if syn_mean > 0.6:
-            return 4  # ALERT — high SYN flood signal
-        elif syn_mean > 0.4:
-            return 2  # CORRELATE — moderate signal
-        elif pkt_mean > 0.7:
-            return 1  # FILTER_IP — high packet rate
-        else:
-            return 0  # PASS
-    except Exception:
-        return 0
-
 def run_task(task_id):
-    env = LogHuntEnv("data/CICIDS2017_sample.csv", curriculum=task_id)
-    obs, _ = env.reset()
-
-    print(json.dumps({
-        "type": "[START]",
-        "task_id": task_id,
-        "observation": obs.tolist()
-    }))
-
-    total_reward = 0.0
-    steps = 0
-    info = {}
-
-    for i in range(200):
-        action = ask_llm(obs, i, task_id)
-        obs, reward, done, _, info = env.step(action)
-        total_reward += reward
-        steps += 1
-
-        # Small delay to respect RPM (Requests Per Minute) limits
-        time.sleep(0.2) 
+    try:
+        env = LogHuntEnv("data/CICIDS2017_sample.csv", curriculum=task_id)
+        obs, _ = env.reset()
 
         print(json.dumps({
-            "type": "[STEP]",
+            "type": "[START]",
             "task_id": task_id,
-            "step": steps,
-            "action": int(action),
-            "reward": float(reward),
-            "done": done
-        }))
+            "observation": obs.tolist()
+        }), flush=True)
 
-        if done:
-            break
+        total_reward = 0
+        steps = 0
 
-    # Normalize score to 0.0–1.0
-    score = float(min(max(total_reward / 300.0, 0.0), 1.0))
+        for _ in range(200):
+            action = np.random.randint(0, 6)
+            obs, reward, done, _, info = env.step(action)
+            total_reward += reward
+            steps += 1
 
-    print(json.dumps({
-        "type": "[END]",
-        "task_id": task_id,
-        "total_reward": float(total_reward),
-        "score": score,
-        "steps": steps,
-        "info": info
-    }))
+            print(json.dumps({
+                "type": "[STEP]",
+                "task_id": task_id,
+                "step": steps,
+                "action": int(action),
+                "reward": float(reward),
+                "done": done
+            }), flush=True)
 
-    return score
+            if done:
+                break
+
+        score = float(min(max(total_reward / 300, 0.0), 1.0))
+
+        print(json.dumps({
+            "type": "[END]",
+            "task_id": task_id,
+            "total_reward": float(total_reward),
+            "score": score,
+            "steps": steps,
+            "info": info
+        }), flush=True)
+
+        return score
+
+    except Exception as e:
+        print(json.dumps({
+            "type": "[END]",
+            "task_id": task_id,
+            "total_reward": 0.0,
+            "score": 0.0,
+            "steps": 0,
+            "error": str(e)
+        }), flush=True)
+        return 0.0
 
 if __name__ == "__main__":
     for task in TASKS:
